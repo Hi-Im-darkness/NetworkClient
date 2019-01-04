@@ -22,10 +22,9 @@ public class DownloadMission {
 	private String save_filename;
 	private String hash;
 	private String save_directory;
-	private int content_size;
+	private long content_size;
 	private int status;
 	private int thread_count;
-	private byte[] storage;
 	private CountDownLatch latch;
 	private JProgressBar progressBar;
 	
@@ -85,7 +84,8 @@ public class DownloadMission {
 	
 	public void init() {
 		try {
-			String parameter = String.format("/get?f=%s", this.save_filename);
+			String parameter = String.format("/get?f=%s", this.save_filename + '/' + this.hash);
+//			String parameter = String.format("/get?f=%s", this.save_filename);
 			URL obj = new URL(this.IS_url + parameter);
 			HttpURLConnection con = (HttpURLConnection) obj.openConnection();
 			con.setRequestMethod("GET");
@@ -93,7 +93,7 @@ public class DownloadMission {
 			int responseCode = con.getResponseCode();
 			if (responseCode != 200) {
 				System.out.println("Internal Error");
-				this.status = FINISHED;
+				this.status = ERROR;
 				return;
 			}
 
@@ -110,13 +110,15 @@ public class DownloadMission {
 			}
 			in.close();
 			this.content_size = getContentLength();	
+			System.out.println(this.content_size);
 		} catch (Exception ex) {
 			ex.printStackTrace();
 		}	
 	}
 	
-	private int getContentLength() {
-		int res = -1, idx = 0;
+	private long getContentLength() {
+		int idx = 0;
+		long res = -1;
 		try {
 			for (; idx < this.MS_url.size(); idx++) {
 				URL obj = new URL(this.MS_url.get(idx));
@@ -128,11 +130,11 @@ public class DownloadMission {
 				int responseCode = con.getResponseCode();
 				if (res == -1) {
 					String raw = con.getHeaderField("Content-range");
-					res =  Integer.valueOf(raw.split("/")[1]);					
+					res =  Long.valueOf(raw.split("/")[1]);					
 				}
 			}
 		} catch (Exception ex) {
-			System.out.println(this.MS_url.get(idx));
+			ex.printStackTrace();
 			this.MS_url.remove(idx);
 		}
 		return res;
@@ -144,15 +146,14 @@ public class DownloadMission {
 			return;
 		}
 		latch = new CountDownLatch(this.thread_count);
-		storage = new byte[this.content_size];
-		int end = -1, start, range_size = this.content_size / this.thread_count + 1;
+		long end = -1, start, range_size = this.content_size / this.thread_count + 1;
 		for (int i = 0; i < this.thread_count; i++) {
 			start = end + 1;
 			end = start + range_size;
 			if (end >= this.content_size)
 				end = this.content_size - 1;
 			String url = this.MS_url.get(i % this.MS_url.size());
-			Thread dr = new DownloadRunnable(url, storage, start, end, latch, this.progressBar);
+			Thread dr = new DownloadRunnable(url, this.save_directory, this.save_filename, start, end, latch, this.progressBar);
 			dr.start();
 		}
 		this.status = DOWNLOADING;
@@ -170,9 +171,6 @@ public class DownloadMission {
 	
 	private void finish() {
 		try {
-			FileOutputStream output_stream = new FileOutputStream(this.save_directory + this.save_filename);
-			output_stream.write(this.storage);
-			output_stream.close();
 			this.status = FINISHED;
 		} catch (Exception ex) {
 			ex.printStackTrace();
